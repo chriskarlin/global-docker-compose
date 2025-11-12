@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+
+	"github.com/codeskyblue/go-sh"
 )
 
 //go:embed docker-compose.yml
@@ -121,12 +123,51 @@ func ecrLogin() {
 	RunCommands("aws ecr get-login-password", "docker login --password-stdin -u AWS 421990735784.dkr.ecr.us-east-1.amazonaws.com")
 }
 
+func ghcrLogin() {
+	session := sh.NewSession()
+	session.ShowCMD = false
+
+	// Try gh CLI
+	username, _ := session.Command("gh", "api", "user", "-q", ".login").Output()
+	token, _ := session.Command("gh", "auth", "token").Output()
+
+	if len(username) > 0 && len(token) > 0 {
+		fmt.Println("Logging into GitHub Container Registry using GitHub CLI credentials...")
+		loginSession := sh.NewSession()
+		loginSession.SetStdin(strings.NewReader(string(token)))
+		err := loginSession.Command("docker", "login", "ghcr.io", "-u", strings.TrimSpace(string(username)), "--password-stdin").Run()
+		if err == nil {
+			fmt.Printf("Successfully logged into ghcr.io as %s\n", strings.TrimSpace(string(username)))
+			return
+		}
+		fmt.Printf("Failed to login with GitHub CLI: %v\n", err)
+	}
+
+	// Try environment variables
+	githubToken := os.Getenv("GITHUB_TOKEN")
+	githubUsername := os.Getenv("GITHUB_USERNAME")
+	if githubToken != "" && githubUsername != "" {
+		fmt.Println("Logging into GitHub Container Registry using environment variables...")
+		loginSession := sh.NewSession()
+		loginSession.SetStdin(strings.NewReader(githubToken))
+		err := loginSession.Command("docker", "login", "ghcr.io", "-u", githubUsername, "--password-stdin").Run()
+		if err == nil {
+			fmt.Printf("Successfully logged into ghcr.io as %s\n", githubUsername)
+			return
+		}
+		fmt.Printf("Failed to login with environment variables: %v\n", err)
+	}
+
+	fmt.Println("Warning: Could not login to ghcr.io. Continuing anyway...")
+}
+
 func Build(service string, compose ComposeInfo, noCache bool) {
 	cmd := fmt.Sprintf("%s build", mainCommand(compose))
 	if noCache {
 		cmd = fmt.Sprintf("%s --no-cache", cmd)
 	}
 
+	ghcrLogin()
 	ecrLogin()
 	RunCommand("%s %s", cmd, service)
 }
@@ -134,6 +175,7 @@ func Build(service string, compose ComposeInfo, noCache bool) {
 // Up bring up the Docker containers
 func Up(compose ComposeInfo) {
 	str := serviceString(compose, "up")
+	ghcrLogin()
 	ecrLogin()
 	RunCommand("%s up -d %s", mainCommand(compose), str)
 }
