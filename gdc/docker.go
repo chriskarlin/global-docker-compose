@@ -133,11 +133,14 @@ func ecrLogin() {
 }
 
 func ghcrLogin() {
-	// Try gh CLI first
-	fmt.Println("Logging into GitHub Container Registry using GitHub CLI credentials...")
-	err := RunCommands("gh auth token", "docker login ghcr.io -u $(gh api user -q .login) --password-stdin")
-	if err == nil {
-		return
+	// Try gh CLI first - get username
+	username, err := RunCommandsOutput("gh api user -q .login")
+	if err == nil && username != "" {
+		fmt.Println("Logging into GitHub Container Registry using GitHub CLI credentials...")
+		err = RunCommands("gh auth token", fmt.Sprintf("docker login ghcr.io -u %s --password-stdin", username))
+		if err == nil {
+			return
+		}
 	}
 
 	// Try environment variables
@@ -145,15 +148,16 @@ func ghcrLogin() {
 	githubUsername := os.Getenv("GITHUB_USERNAME")
 	if githubToken != "" && githubUsername != "" {
 		fmt.Println("Logging into GitHub Container Registry using environment variables...")
-		cmds := []string{
+		err = RunCommands(
 			fmt.Sprintf("echo %s", githubToken),
 			fmt.Sprintf("docker login ghcr.io -u %s --password-stdin", githubUsername),
-		}
-		err = RunCommands(cmds...)
-		if err != nil {
-			Exit("Error logging into GHCR! %v", err)
+		)
+		if err == nil {
+			return
 		}
 	}
+
+	fmt.Println("Warning: Could not login to ghcr.io. Continuing anyway...")
 }
 
 func Build(service string, compose ComposeInfo, noCache bool) {

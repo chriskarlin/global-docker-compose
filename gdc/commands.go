@@ -56,3 +56,17 @@ func RunCommands(commands ...string) error {
 
 	return session.Run()
 }
+
+// RunCommandsOutput run a list of commands piped together and return the output
+func RunCommandsOutput(commands ...string) (string, error) {
+	session := sh.NewSession()
+	session.ShowCMD = false
+	session.PipeStdErrors = true
+	session.PipeFail = true
+	for _, cmd := range commands {
+		session = shellCommand(session, cmd)
+	}
+	
+	output, err := session.Output()
+	return strings.TrimSpace(string(output)), err
+}
