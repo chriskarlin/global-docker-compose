@@ -6,8 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-
-	"github.com/codeskyblue/go-sh"
 )
 
 //go:embed docker-compose.yml
@@ -109,10 +107,14 @@ func mainCommand(compose ComposeInfo) string {
 
 func executeDockerCommand(compose ComposeInfo, service string, command string, inputFile string) {
 	if len(inputFile) > 0 {
-		RunCommands(
+		cmds := []string{
 			fmt.Sprintf("cat %s", inputFile),
 			fmt.Sprintf("%s exec -T %s %s", mainCommand(compose), service, command),
-		)
+		}
+		err := RunCommands(cmds...)
+		if err != nil {
+			Exit("Error running command! %v", cmds)
+		}
 	} else {
 		RunCommand("%s exec %s %s", mainCommand(compose), service, command)
 
@@ -120,27 +122,22 @@ func executeDockerCommand(compose ComposeInfo, service string, command string, i
 }
 
 func ecrLogin() {
-	RunCommands("aws ecr get-login-password", "docker login --password-stdin -u AWS 421990735784.dkr.ecr.us-east-1.amazonaws.com")
+	cmds := []string{
+		"aws ecr get-login-password",
+		"docker login --password-stdin -u AWS 421990735784.dkr.ecr.us-east-1.amazonaws.com",
+	}
+	err := RunCommands(cmds...)
+	if err != nil {
+		Exit("Error logging into ECR! %v", err)
+	}
 }
 
 func ghcrLogin() {
-	session := sh.NewSession()
-	session.ShowCMD = false
-
-	// Try gh CLI
-	username, _ := session.Command("gh", "api", "user", "-q", ".login").Output()
-	token, _ := session.Command("gh", "auth", "token").Output()
-
-	if len(username) > 0 && len(token) > 0 {
-		fmt.Println("Logging into GitHub Container Registry using GitHub CLI credentials...")
-		loginSession := sh.NewSession()
-		loginSession.SetStdin(strings.NewReader(string(token)))
-		err := loginSession.Command("docker", "login", "ghcr.io", "-u", strings.TrimSpace(string(username)), "--password-stdin").Run()
-		if err == nil {
-			fmt.Printf("Successfully logged into ghcr.io as %s\n", strings.TrimSpace(string(username)))
-			return
-		}
-		fmt.Printf("Failed to login with GitHub CLI: %v\n", err)
+	// Try gh CLI first
+	fmt.Println("Logging into GitHub Container Registry using GitHub CLI credentials...")
+	err := RunCommands("gh auth token", "docker login ghcr.io -u $(gh api user -q .login) --password-stdin")
+	if err == nil {
+		return
 	}
 
 	// Try environment variables
@@ -148,17 +145,15 @@ func ghcrLogin() {
 	githubUsername := os.Getenv("GITHUB_USERNAME")
 	if githubToken != "" && githubUsername != "" {
 		fmt.Println("Logging into GitHub Container Registry using environment variables...")
-		loginSession := sh.NewSession()
-		loginSession.SetStdin(strings.NewReader(githubToken))
-		err := loginSession.Command("docker", "login", "ghcr.io", "-u", githubUsername, "--password-stdin").Run()
-		if err == nil {
-			fmt.Printf("Successfully logged into ghcr.io as %s\n", githubUsername)
-			return
+		cmds := []string{
+			fmt.Sprintf("echo %s", githubToken),
+			fmt.Sprintf("docker login ghcr.io -u %s --password-stdin", githubUsername),
 		}
-		fmt.Printf("Failed to login with environment variables: %v\n", err)
+		err = RunCommands(cmds...)
+		if err != nil {
+			Exit("Error logging into GHCR! %v", err)
+		}
 	}
-
-	fmt.Println("Warning: Could not login to ghcr.io. Continuing anyway...")
 }
 
 func Build(service string, compose ComposeInfo, noCache bool) {
