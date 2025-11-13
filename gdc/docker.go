@@ -160,21 +160,25 @@ func ghcrLogin() {
 	fmt.Println("Warning: Could not login to ghcr.io. Continuing anyway...")
 }
 
-func Build(service string, compose ComposeInfo, noCache bool) {
+func Build(service string, compose ComposeInfo, noCache bool, loginToGhcr bool) {
 	cmd := fmt.Sprintf("%s build", mainCommand(compose))
 	if noCache {
 		cmd = fmt.Sprintf("%s --no-cache", cmd)
 	}
 
-	ghcrLogin()
+	if loginToGhcr {
+		ghcrLogin()
+	}
 	ecrLogin()
 	RunCommand("%s %s", cmd, service)
 }
 
 // Up bring up the Docker containers
-func Up(compose ComposeInfo) {
+func Up(compose ComposeInfo, loginToGhcr bool) {
 	str := serviceString(compose, "up")
-	ghcrLogin()
+	if loginToGhcr {
+		ghcrLogin()
+	}
 	ecrLogin()
 	RunCommand("%s up -d %s", mainCommand(compose), str)
 }
