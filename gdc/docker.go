@@ -157,7 +157,7 @@ func ghcrLogin() {
 		}
 	}
 
-	fmt.Println("Warning: Could not login to ghcr.io. Continuing anyway...")
+	Exit("Error logging into GitHub Container Registry! Please make sure you have the gh CLI installed and authenticated, or set the GITHUB_TOKEN and GITHUB_USERNAME environment variables.")
 }
 
 func Build(service string, compose ComposeInfo, noCache bool, loginToGhcr bool) {
